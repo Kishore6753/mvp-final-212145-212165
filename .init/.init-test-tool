@@ -1,0 +1,4 @@
+{
+    "command": "pytest",
+    "working_directory": "/home/kavia/workspace/code-generation/mvp-final-212145-212165/CareerPlatformBackendAPI"
+}
