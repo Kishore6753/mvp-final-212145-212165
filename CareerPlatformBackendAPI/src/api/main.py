@@ -1,8 +1,11 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRouter
 
 from src.api.routers.health import router as health_router
+from src.api.settings import log_database_url_status
 
 openapi_tags = [
     {
@@ -33,6 +36,13 @@ api_v1 = APIRouter(prefix="/api/v1")
 api_v1.include_router(health_router)
 
 app.include_router(api_v1)
+
+
+@app.on_event("startup")
+def _startup_log_config() -> None:
+    """Startup hook: log one-line, sanitized status about DATABASE_URL detection."""
+    logger = logging.getLogger("uvicorn.error")
+    log_database_url_status(logger)
 
 
 # PUBLIC_INTERFACE

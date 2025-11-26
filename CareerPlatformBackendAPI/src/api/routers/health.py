@@ -1,14 +1,13 @@
-import os
+
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
-# We will use SQLAlchemy's sync engine for a minimal connection test.
-# This avoids introducing async complexity if the rest of the app is sync.
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+from src.api.settings import adapt_db_url_for_driver, get_database_url
 
 router = APIRouter(prefix="/health", tags=["Health"])
 
@@ -51,57 +50,16 @@ def _mask_error_message(msg: str) -> str:
     return first_line[:200]
 
 
-def _read_database_url() -> Tuple[str, dict]:
-    """
-    Read and validate DATABASE_URL and return a sanitized diagnostics map.
-
-    Returns:
-        Tuple[str, dict]: (db_url, diagnostics) where diagnostics contains non-sensitive flags
-    """
-    diagnostics = {}
-    db_url = os.environ.get("DATABASE_URL")
-    if not db_url:
-        raise RuntimeError("DATABASE_URL is not configured")
-
-    lower_url = db_url.lower()
-    diagnostics["has_sslmode_require"] = "sslmode=require" in lower_url
-    diagnostics["has_channel_binding"] = "channel_binding=require" in lower_url or "channel_binding=strict" in lower_url
-
-    # We do not log the URL. Only return booleans for required flags.
-    return db_url, diagnostics
-
-
-def _adapt_driver_if_needed(db_url: str) -> str:
-    """
-    If psycopg2 is not installed or incompatible, allow psycopg3 (psycopg[binary]) by adjusting the URL.
-    This function does not inspect installed packages (to avoid import side-effects) but makes a best-effort:
-    - If URL has postgresql:// or postgres:// without a +driver, SQLAlchemy will choose best available.
-    - If URL contains +psycopg2 and that driver is missing, it will fail; we try replacing with +psycopg.
-
-    We keep the original if no explicit driver segment exists.
-    """
-    if "+psycopg2" in db_url:
-        return db_url.replace("+psycopg2", "+psycopg")
-    return db_url
-
-
-def _get_engine() -> Tuple[Engine, dict]:
+def _get_engine() -> Tuple[Engine, Dict[str, Any]]:
     """
     Create a SQLAlchemy sync engine from the DATABASE_URL environment variable.
-    Neon requires SSL; rely on sslmode=require within the provided URL. We do not
-    hardcode credentials here.
 
     Returns:
         (Engine, diagnostics) where diagnostics includes only non-sensitive hints.
     """
-    db_url, diagnostics = _read_database_url()
-
-    # Prefer leaving driver unspecified, but if user explicitly set psycopg2, allow fallback to psycopg3
-    adapted_url = _adapt_driver_if_needed(db_url)
-    if adapted_url != db_url:
-        diagnostics["driver_adapted"] = True
-    else:
-        diagnostics["driver_adapted"] = False
+    db_url, diagnostics = get_database_url()
+    adapted_url, adapt_diag = adapt_db_url_for_driver(db_url)
+    diagnostics.update(adapt_diag)
 
     engine = create_engine(
         adapted_url,
@@ -179,13 +137,12 @@ def health_check_db() -> HealthDBResponse:
 
     Returns:
         HealthDBResponse: status ok|error, with database and time fields when available.
+
     Raises:
         HTTPException: with 503 status code when the DB cannot be reached.
     """
     try:
         engine, diag = _get_engine()
-        # Non-sensitive preflight checks: inform if ssl/channel binding flags appear missing
-        # We don't raise for missing flags, but include hint in error path.
         with engine.connect() as conn:
             result = conn.execute(text("SELECT 1 as ok, current_database() as db, now() as ts"))
             row = result.first()
@@ -205,7 +162,7 @@ def health_check_db() -> HealthDBResponse:
         hint_parts = []
         try:
             # Best effort to read flags for hinting
-            _, preflight = _read_database_url()
+            _, preflight = get_database_url()
             if not preflight.get("has_sslmode_require"):
                 hint_parts.append("sslmode=require not found in DATABASE_URL")
             if not preflight.get("has_channel_binding"):
