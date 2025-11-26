@@ -34,6 +34,8 @@ rich-toolkit==0.14.1
 shellingham==1.5.4
 sniffio==1.3.1
 sqlalchemy==2.0.37
+# Prefer psycopg3 binary; keep psycopg2-binary for compatibility. Environment can remove one if necessary.
+psycopg[binary]==3.2.4
 psycopg2-binary==2.9.10
 starlette==0.46.1
 typer==0.15.2

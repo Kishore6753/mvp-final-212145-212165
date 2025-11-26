@@ -28,5 +28,15 @@ Example error response (HTTP 503):
 ```
 
 Notes:
-- Configure the environment variable `DATABASE_URL` (should include `sslmode=require` for Neon).
-- No secrets are logged or returned by this endpoint.
+- Configure the environment variable `DATABASE_URL` for Neon. It must include at minimum:
+  - `sslmode=require`
+  - `channel_binding=require` (or `channel_binding=strict`)
+- Example (do NOT paste real secrets; this is illustrative): `postgresql://<user>:<password>@<host>.neon.tech/<db>?sslmode=require&channel_binding=require`
+- Drivers:
+  - The service supports psycopg3 (psycopg[binary]) and psycopg2-binary. If `+psycopg2` was embedded in the URL and the driver is unavailable, the health check will attempt to adapt to `+psycopg`.
+- Troubleshooting:
+  - 503 with `dns resolution error`: verify the hostname and network egress.
+  - 503 with `tls/ssl handshake error`: confirm `sslmode=require` and TLS reachability.
+  - 503 with `authentication error`: validate user/password and that the role exists in Neon.
+  - 503 with `network connectivity error`: check firewall/VPC and outbound access.
+- Security: No secrets are logged or returned by this endpoint.
